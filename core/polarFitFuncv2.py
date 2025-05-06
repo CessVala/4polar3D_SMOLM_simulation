@@ -1,3 +1,14 @@
+"""
+polarFitFuncv2.py
+#
+# This module contains functions for fitting polarization data
+# in the context of 4polar3D Single-Molecule Orientation Localization Microscopy (SMOLM) simulations.
+# The functions are designed to process simulated data and extract orientation information.
+#
+Author: Cesar Valades-Cruz, IHB
+Date: April 29, 2025
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.feature import peak_local_max
@@ -9,12 +20,8 @@ import pandas as pd
 import math
 
 def getpeaksfromMax(img_arr,thresh,min_distance,window_size):
-    # Read the TIFF image using PIL
-    #img = Image.open('image.tif')
-
-    # Convert the image to a NumPy array
-    #img_arr = np.array(img)
-
+    # Identify local maxima (peaks) above a threshold using a minimum separation
+    
     # Use Otsu's threshold to convert the image to a binary mask
     #thresh = threshold_otsu(img_arr)
     #thresh = 1000
@@ -31,20 +38,24 @@ def getpeaksfromMax(img_arr,thresh,min_distance,window_size):
     return x,y
 
 def gauss2d(xy, a, x0, y0, sx, sy, c):
+    # 2D Gaussian function used for fitting
     (x,y)=xy
     g2D=a * np.exp(-0.5*((x-x0)/sx)**2 - 0.5*((y-y0)/sy)**2) + c
     return np.ravel(g2D)
 
 def gauss1d(xy, a, x0, y0, sx, c):
+    # Simplified isotropic 2D Gaussian model (same sigma in x and y)
     (x,y)=xy
     g2D=a * np.exp(-0.5*((x-x0)/sx)**2 - 0.5*((y-y0)/sx)**2) + c
     return np.ravel(g2D)
 
-# Define the Cramer bound function to estimate parameters
+# Define the Cramer bound function to estimate parameters 
+# To be improved
 def cramer_bound(x, sx, sy):
     return np.sqrt(8*np.log(2)) * np.sqrt(sx**2 + sy**2) / x
 
 def divide_coordinates(x,y, width, height):
+    # Divide coordinates into 4 quadrants based on image size
     quadrant =np.zeros(len(x))
     
     for i in range(len(x)):
@@ -62,6 +73,8 @@ def divide_coordinates(x,y, width, height):
     return quadrant
 
 def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
+    # Fit each detected peak with selected PSF model and extract fit parameters
+
     # Loop over each peak and fit a 2D Gaussian
     results = []
     Xres=np.zeros(len(x))
@@ -98,6 +111,7 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
         try:
 
             if PSFmodel=='2Dgaussian':
+                # Fit with 2D Gaussian model using nonlinear least squares
                 popt, pcov = curve_fit(gauss2d,xymesh, sub_img.ravel(), p0=p0, maxfev=600,bounds=(0, [np.inf,window_size, window_size,np.inf, np.inf,np.inf]))
                 
                 # Calculate the corrected position, integrated intensity, amplitude, and resolution
@@ -118,6 +132,7 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
                 
 
             elif PSFmodel=='1Dgaussian':
+                # Fit with simplified 1D (isotropic) Gaussian model
                 popt, pcov = curve_fit(gauss1d,xymesh, sub_img.ravel(), p0=p0_1, maxfev=600,bounds=(0, [np.inf,window_size, window_size,np.inf,np.inf]))
                 
                 # Calculate the corrected position, integrated intensity, amplitude, and resolution
@@ -137,6 +152,7 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
                 sigmaY[counter]=popt[3]
 
             elif PSFmodel=='intwindow':
+                # Compute intensity by integrating a window, use local median as background estimate
 
                 # Define the border width
                 border_width = 1
@@ -150,8 +166,6 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
 
                 # Calculate the median of the border pixels
                 median_border = np.median(border_pixels)
-
-                #print(median_border)
 
                 # Calculate the corrected position, integrated intensity, amplitude, and resolution
                 x0_corr = xi
@@ -213,6 +227,7 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
     return results, Xres, Yres, intenMat, amplMat, resMat,sigmaX,sigmaY
 
 def find_closest_spot(a, b_list, threshold):
+    # Find closest point in b_list to point a, within a threshold
     closest_spot = None
     closest_distance = math.inf
     for b in b_list:
@@ -226,6 +241,7 @@ def find_closest_spot(a, b_list, threshold):
         return None, None
 
 def find_matched_spots(xA,yA,xB,yB,threshold,img_arr,dxB,dyB,flagPlot):
+    # Match spots from list A and B based on nearest-neighbor within a threshold
     a_list = list(zip(xA, yA))
     b_list = list(zip(xB+dxB, yB+dyB))
     a_matched = []
@@ -261,11 +277,14 @@ def find_matched_spots(xA,yA,xB,yB,threshold,img_arr,dxB,dyB,flagPlot):
     return df
 
 def fitting4polar(img_arr,thresh,min_distance,window_size,PSFmodel,flagplot):
-    # 
+    # Main function to process an image and perform multi-PSF fitting across quadrants
+   
     width, height=img_arr.shape
 
+    # Detect peaks in image
     x,y=getpeaksfromMax(img_arr,thresh,min_distance,window_size)
 
+    # Optionally show detected peaks
     if flagplot:
         fig, ax = plt.subplots(figsize=(8,8))
         ax.imshow(img_arr, cmap='gray')
@@ -274,13 +293,16 @@ def fitting4polar(img_arr,thresh,min_distance,window_size,PSFmodel,flagplot):
         ax.axis('off')
         plt.show()
 
-    quadrant=divide_coordinates(x,y, width, height)
+    
+    # Split peaks by quadrant and apply fitting separately
 
+    quadrant=divide_coordinates(x,y, width, height)
     results1, xA, yA, intenMat1, amplMat1, resMat1,sigmaX1,sigmaY1=fit2Dspot(x[quadrant==1],y[quadrant==1],img_arr,window_size,PSFmodel,flagplot)
     results2, xB, yB, intenMat2, amplMat2, resMat2,sigmaX2,sigmaY2=fit2Dspot(x[quadrant==2],y[quadrant==2],img_arr,window_size,PSFmodel,flagplot)
     results3, xC, yC, intenMat3, amplMat3, resMat3,sigmaX3,sigmaY3=fit2Dspot(x[quadrant==3],y[quadrant==3],img_arr,window_size,PSFmodel,flagplot)
     results4, xD, yD, intenMat4, amplMat4, resMat4,sigmaX4,sigmaY4=fit2Dspot(x[quadrant==4],y[quadrant==4],img_arr,window_size,PSFmodel,flagplot)
     
+    # Compile results into output dictionary
 
     output_dict = {}
     output_dict['x']=x
@@ -322,14 +344,11 @@ def fitting4polar(img_arr,thresh,min_distance,window_size,PSFmodel,flagplot):
     output_dict['sigmaX4']=sigmaX4
     output_dict['sigmaY4']=sigmaY4
 
-
-    #return x,y, results1, xA, yA, intenMat1, amplMat1, resMat1,results2, xB, yB, intenMat2, amplMat2, resMat2,results3, xC, yC, intenMat3, amplMat3, resMat3,results4, xD, yD, intenMat4, amplMat4, resMat4
     return output_dict
 
-
-#def registration4polar(flagplot,threshDist,img_arr,results1, xA, yA, intenMat1, amplMat1, resMat1,results2, xB, yB, intenMat2, amplMat2, resMat2,results3, xC, yC, intenMat3, amplMat3, resMat3,results4, xD, yD, intenMat4, amplMat4,resMat4):
 def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
     
+    # Unpack detection results and attributes for each quadrant (A-D)
     results1 = output_dict['results1']
     xA = output_dict['xA']
     yA = output_dict['yA']
@@ -366,20 +385,26 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
     sigmaX4=output_dict['sigmaX4']
     sigmaY4=output_dict['sigmaY4']
 
+    # Find matched spots between A & B, A & C, A & D using spatial offset (deltaij)
     df = find_matched_spots(xA,yA,xB,yB,threshDist,img_arr,-deltaij,0,False)
     df2 = find_matched_spots(xA,yA,xC,yC,threshDist,img_arr,0,-deltaij,False)
     df3 = find_matched_spots(xA,yA,xD,yD,threshDist,img_arr,-deltaij,-deltaij,False)
     
+    # Extract indices of matched spots in A
     pos1_2=df.positionA_matched.values
     pos1_3=df2.positionA_matched.values
     pos1_4=df3.positionA_matched.values
     
+    # Extract corresponding matched indices in B, C, D
     pos2=df.positionB_matched.values
     pos3=df2.positionB_matched.values
     pos4=df3.positionB_matched.values
     
+    # Find spots matched in all four quadrants (intersection of all matched sets)
     pos4quadrant0=np.intersect1d(pos1_2,np.intersect1d(pos1_3,pos1_4))
     pos4quadrant=np.sort(pos4quadrant0)
+
+    # Initialize result array: each row will hold attributes for one matched spot across 4 quadrants
     Results=np.zeros((len(pos4quadrant),28))
     counter=0
 
@@ -388,6 +413,7 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
         index3=np.where(pos1_3==i)
         index4=np.where(pos1_4==i)
 
+        # Fill in spot info from quadrant A
         Results[counter][0]=xA[i]
         Results[counter][1]=yA[i]
         Results[counter][2]=intenMat1[i]
@@ -396,6 +422,7 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
         Results[counter][5]=sigmaX1[i]
         Results[counter][6]=sigmaY1[i]
 
+        # Quadrant B
         Results[counter][7]=xB[pos2[index2]]
         Results[counter][8]=yB[pos2[index2]]
         Results[counter][9]=intenMat2[index2]
@@ -404,6 +431,7 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
         Results[counter][12]=sigmaX2[index2]
         Results[counter][13]=sigmaY2[index2]
 
+        # Quadrant C
         Results[counter][14]=xC[pos3[index3]]
         Results[counter][15]=yC[pos3[index3]]
         Results[counter][16]=intenMat3[index3]
@@ -412,6 +440,7 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
         Results[counter][19]=sigmaX3[index3]
         Results[counter][20]=sigmaY3[index3]
         
+        # Quadrant D
         Results[counter][21]=xD[pos4[index4]]
         Results[counter][22]=yD[pos4[index4]]
         Results[counter][23]=intenMat4[index4]
@@ -424,8 +453,8 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
 
     num_spots=Results.shape[0]
 
+    # Generate a color map for plotting
     rgb_range=np.linspace(0,1,num_spots)
-
     rgb_vals=plt.cm.jet(rgb_range)
 
     if flagplot:
@@ -443,15 +472,16 @@ def registration4polar(flagplot,threshDist,img_arr,output_dict,deltaij):
     return Results
 
 def Fcn_dg_4x4_modif_3D_07122022(I0, I45, I90, I135,K):
-    
-
+    # Convert inputs to numpy arrays
     I_0 = np.array(I0)
     I_90 = np.array(I90)
     I_45 = np.array(I45)
     I_135 = np.array(I135)
 
+    # Inverse of the k matrix
     K_inv = np.linalg.inv(K)
 
+    # Initialize outputs
     rho_all = np.zeros(len(I_0))
     eta_all = np.zeros(len(I_0))
     delta_all = np.zeros(len(I_0))
@@ -465,6 +495,7 @@ def Fcn_dg_4x4_modif_3D_07122022(I0, I45, I90, I135,K):
         Puv = 2 * M[3] / A2
         Pz = M[2] / A2
 
+        # Ensure real values for further computation
         Puv = np.real(Puv)
         Pxy = np.real(Pxy)
         Pz = np.real(Pz)
@@ -490,6 +521,7 @@ def Fcn_dg_4x4_modif_3D_07122022(I0, I45, I90, I135,K):
         except:
             eta_all[i] = np.NaN
 
+    # Wrap rho values to [0, π]
     rho_all=np.where(rho_all<0,rho_all+np.pi,rho_all)
 
     return delta_all, rho_all, eta_all
