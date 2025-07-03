@@ -61,6 +61,20 @@ jupyter notebook ComparingFitting.ipynb
 python runBatch.py
 ```    
 
+
+## MATLAB Simulated PSF Image Generator
+
+In addition to the Python-based simulation framework, this repository includes a MATLAB utility called MATLAB_Simulated_PSF_ImageGenerator.
+
+The main script is [`Simulate_4polar3D_Data.m`](MATLAB_Simulated_PSF_ImageGenerator/Simulate_4polar3D_Data.m).
+
+This tool allows the generation of synthetic point-spread function (PSF) images for 4polar3D simulations using user-defined optical parameters, such as numerical aperture, refractive indices, wavelength, and dipole orientation distributions.
+
+The simulated PSF images can be used to validate the 4polar3D data analysis pipeline or to generate synthetic datasets for algorithm benchmarking.
+
+The MATLAB-based PSF simulation complements the Python processing workflows and enables flexible cross-platform usage within the project.
+
+
 ## License
 
 This project is licensed under the BSD-3-Clause License. See the [LICENSE](https://github.com/CessVala/4polar3D_SMOLM_simulation/blob/main/LICENSE) file for details.
