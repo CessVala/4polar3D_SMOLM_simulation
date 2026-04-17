@@ -10,7 +10,7 @@ import os
 import re
 from joblib import Parallel, delayed, cpu_count
 from tqdm import tqdm
-from scipy.stats import circstd
+from scipy.stats import circstd, circmean
 
 def load_simulation_images(filepath):
     """
@@ -243,6 +243,31 @@ def plotfinalfigure(img_arr, results, modeltxt, fig_dir, filename):
     figname = f"{base_name}_{modeltxt}_IdentifiedCouples.png"
     fig.savefig(os.path.join(fig_dir, figname))
 
+def calculate_error_angle_limits(real_value,teo_value,limS):
+
+    if np.isnan(real_value):
+        angleDiff=np.nan
+
+    else:
+        
+        if real_value<teo_value:
+            minValue=real_value
+            maxValue=teo_value
+        else:
+            minValue=teo_value
+            maxValue=real_value
+
+        Error1=maxValue-minValue
+        Error2=np.abs(maxValue-limS)+minValue
+
+
+        if Error1<Error2:
+            angleDiff=Error1
+        else:
+            angleDiff=Error2
+
+    return angleDiff
+
 def plot_orientation_distributions(delta_teo, rho_teo, eta_teo,
                                    delta_all, rho_all, eta_all,
                                    PSFmodel, fig_dir, filename):
@@ -252,41 +277,47 @@ def plot_orientation_distributions(delta_teo, rho_teo, eta_teo,
     eta_deg   = eta_all * 180 / np.pi
 
     mean_delta = np.nanmean(delta_deg)
-    mean_rho   = np.nanmean(rho_deg)
+    mean_rho   = circmean(rho_deg,high=180,low=0,nan_policy='omit')
     mean_eta   = np.nanmean(eta_deg)
 
-    std_delta = circstd(delta_deg, high=180, low=0, nan_policy='omit')
+    std_delta = np.nanstd(delta_deg)
     std_rho   = circstd(rho_deg, high=180, low=0, nan_policy='omit')
-    std_eta   = circstd(eta_deg, high=180, low=0, nan_policy='omit')
+    std_eta   = np.nanstd(eta_deg)
 
-    RMSE_delta =np.sqrt(np.nanmean([(delta_teo - real_value)**2 for real_value in delta_all*180/np.pi]))
-    RMSE_rho =np.sqrt(np.nanmean([(rho_teo - real_value)**2 for real_value in rho_all*180/np.pi]))
     RMSE_eta =np.sqrt(np.nanmean([(eta_teo - real_value)**2 for real_value in eta_all*180/np.pi]))
+    RMSE_delta =np.sqrt(np.nanmean([(delta_teo - real_value)**2 for real_value in delta_all*180/np.pi]))
+        
+    RMSE_rho =np.sqrt(np.nanmean([(calculate_error_angle_limits(real_value,rho_teo,180))**2 for real_value in rho_all*180/np.pi]))
     
     eta_nan = np.count_nonzero(np.isnan(eta_all))
     rho_nan = np.count_nonzero(np.isnan(rho_all))
     delta_nan = np.count_nonzero(np.isnan(delta_all))
 
-    xticks = np.linspace(0, 180, 5)
-    fig, ax = plt.subplots(1, 3, figsize=(16, 3))
+    n_delta=delta_all.shape[0]-delta_nan
+    n_rho=rho_all.shape[0]-rho_nan
+    n_eta=eta_all.shape[0]-eta_nan
 
-    ax[0].hist(delta_deg, bins=range(0, 190, 5))
+    xticks = np.linspace(0, 180, 5)
+    fig, ax = plt.subplots(nrows=1,ncols=3,figsize=(16,3))
+    
+    
+    ax[0].hist(delta_deg, bins=range(0, 190, 5))   
     ax[0].set_title(
-        f'δ [teo= {delta_teo:.1f}°, mean= {mean_delta:.1f}°, ±{std_delta:.1f}°, RMSE= {RMSE_delta:.1f}°]',
+        f'δ [teo= {delta_teo:.1f}°, mean= {mean_delta:.1f}°, ±{std_delta:.1f}°, RMSE= {RMSE_delta:.1f}°, n= {n_delta:.1f}]',
         fontsize=8)
     ax[0].set_xticks(xticks)
     ax[0].axvline(delta_teo, color='red', linestyle='--')
 
     ax[1].hist(rho_deg, bins=range(0, 190, 5))
     ax[1].set_title(
-        f'ρ [teo= {rho_teo:.1f}°, mean= {mean_rho:.1f}°, ±{std_rho:.1f}°, RMSE= {RMSE_rho:.1f}°]',
+        f'ρ [teo= {rho_teo:.1f}°, mean= {mean_rho:.1f}°, ±{std_rho:.1f}°, RMSE= {RMSE_rho:.1f}°, n= {n_rho:.1f}]',
         fontsize=8)
     ax[1].set_xticks(xticks)
     ax[1].axvline(rho_teo, color='red', linestyle='--')
 
     ax[2].hist(eta_deg, bins=range(0, 190, 5))
     ax[2].set_title(
-        f'η [teo= {eta_teo:.1f}°, mean= {mean_eta:.1f}°, ±{std_eta:.1f}°, RMSE= {RMSE_eta:.1f}°]',
+        f'η [teo= {eta_teo:.1f}°, mean= {mean_eta:.1f}°, ±{std_eta:.1f}°, RMSE= {RMSE_eta:.1f}°, n= {n_eta:.1f}]',
         fontsize=8)
     ax[2].set_xticks(xticks)
     ax[2].axvline(eta_teo, color='red', linestyle='--')
@@ -356,13 +387,13 @@ def plot_intensity_histograms(totalInt1G, totalInt2G, totalIntintWn, fig_dir, fi
     fig, ax = plt.subplots(nrows=1, ncols=3, figsize=(16, 3))
 
     ax[0].hist(totalInt1G, bins=binsInt)
-    ax[0].set_title('1D Gaussian')
+    ax[0].set_title('1D Gaussian , n= '+str(totalInt1G.shape[0])+' pairs')
 
     ax[1].hist(totalInt2G, bins=binsInt)
-    ax[1].set_title('2D Gaussian')
+    ax[1].set_title('2D Gaussian , n= '+str(totalInt2G.shape[0])+' pairs')
 
     ax[2].hist(totalIntintWn, bins=binsInt)
-    ax[2].set_title('Integrated window')
+    ax[2].set_title('Integrated window , n= '+str(totalIntintWn.shape[0])+' pairs')
 
     fig.suptitle("Total Intensity", y=1.05)
 

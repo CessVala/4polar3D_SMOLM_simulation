@@ -6,7 +6,7 @@ polarFitFuncv2.py
 # The functions are designed to process simulated data and extract orientation information.
 #
 Author: Cesar Valades-Cruz, IHB
-Date: April 29, 2025
+Date: November 19, 2025
 """
 
 import numpy as np
@@ -154,14 +154,29 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
             elif PSFmodel=='intwindow':
                 # Compute intensity by integrating a window, use local median as background estimate
 
+                popt, pcov = curve_fit(gauss1d,xymesh, sub_img.ravel(), p0=p0_1, maxfev=600,bounds=(0, [np.inf,window_size, window_size,np.inf,np.inf]))
+
+                # Calculate the corrected position
+                x0_corr = xi + popt[1] - window_size // 2
+                y0_corr = yi + popt[2] - window_size // 2
+
+                xi = int(x0_corr)
+                yi = int(y0_corr)
+                xstart = max(xi - window_size // 2, 0)
+                ystart = max(yi - window_size // 2, 0)
+                xend = min(xi + window_size // 2 + 1, img_arr.shape[1])
+                yend = min(yi + window_size // 2 + 1, img_arr.shape[0])
+                sub_img2 = img_arr[ystart:yend, xstart:xend]
+                sub_img3 = img_arr[ystart-1:yend+1, xstart-1:xend+1] # Image one pixel bigger
+
                 # Define the border width
                 border_width = 1
                 
                 # Get the pixels in the border of the image
-                border_pixels = np.concatenate((sub_img[:border_width, :],      # Top border
-                                                sub_img[-border_width:, :],     # Bottom border
-                                                sub_img[:, :border_width],      # Left border
-                                                sub_img[:, -border_width:]),    # Right border
+                border_pixels = np.concatenate((sub_img3[:border_width, :],      # Top border
+                                                sub_img3[-border_width:, :],     # Bottom border
+                                                sub_img3[:, :border_width],      # Left border
+                                                sub_img3[:, -border_width:]),    # Right border
                                             axis=None)
 
                 # Calculate the median of the border pixels
@@ -170,26 +185,26 @@ def fit2Dspot(x,y,img_arr,window_size,PSFmodel,flagplot):
                 # Calculate the corrected position, integrated intensity, amplitude, and resolution
                 x0_corr = xi
                 y0_corr = yi
-                inten = sub_img.sum()-median_border*sub_img.size
+                inten = sub_img2.sum()-median_border*sub_img2.size
 
                 if inten<0:
                     inten=1e-6
 
-                ampl =  sub_img.max()-median_border
+                ampl =  sub_img2.max()-median_border
 
                 if ampl<0:
                     ampl=1e-6
 
-                res_x = 0
-                res_y=0
-                res = 0
                 Xres[counter]= x0_corr
                 Yres[counter]= y0_corr
                 intenMat[counter]= inten
                 amplMat[counter]= ampl
+                res_x = cramer_bound(popt[3], popt[3], popt[3])
+                res_y=res_x
+                res = res_x               
                 resMat[counter]= res
-                sigmaX[counter]=0
-                sigmaY[counter]=0
+                sigmaX[counter]=popt[3]
+                sigmaY[counter]=popt[3]
 
             else:
                 print("Not implemented method")
@@ -478,8 +493,8 @@ def Fcn_dg_4x4_modif_3D_07122022(I0, I45, I90, I135,K):
     I_45 = np.array(I45)
     I_135 = np.array(I135)
 
-    # Inverse of the k matrix
-    K_inv = np.linalg.inv(K)
+    # Pseudo Inverse of the k matrix
+    K_inv = np.linalg.pinv(K)
 
     # Initialize outputs
     rho_all = np.zeros(len(I_0))
@@ -502,22 +517,18 @@ def Fcn_dg_4x4_modif_3D_07122022(I0, I45, I90, I135,K):
 
         rho_all[i] = 0.5 * np.arctan2(Puv, Pxy)
 
-        lambda_3 = Pz + np.sqrt(Puv**2 + Pxy**2)
+        lambda_3 = np.real( Pz + np.sqrt(Puv**2 + Pxy**2))
         lambda_val = (1 - lambda_3) / 2
 
         try:
             with np.errstate(invalid='ignore'):
-                val1=0.5 * np.abs(-1 + np.sqrt(12 * lambda_3 - 3))
-            with np.errstate(invalid='ignore'):
-                delta_all[i] = 2 * np.arccos(val1)
+                delta_all[i] = np.real(2 * np.arccos(0.5 * np.abs(-1 + np.sqrt(12 * lambda_3 - 3))))
         except:
             delta_all[i] = np.NaN
 
         try:
             with np.errstate(invalid='ignore'):
-                val2=np.sqrt((Pz - lambda_val) / (1 - 3 * lambda_val))
-            with np.errstate(invalid='ignore'):
-                eta_all[i] = np.arccos(val2)
+                eta_all[i] = np.real(np.arccos(np.sqrt((Pz - lambda_val) / (1 - 3 * lambda_val))))
         except:
             eta_all[i] = np.NaN
 
